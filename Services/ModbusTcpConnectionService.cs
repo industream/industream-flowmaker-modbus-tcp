@@ -120,7 +120,10 @@ public class ModbusTcpConnectionService : IDisposable
 
     private async Task ConnectInternalAsync(CancellationToken cancellationToken)
     {
-        _tcpClient?.Dispose();
+        // Dispose previous connection safely
+        try { _modbusMaster?.Dispose(); } catch { /* Ignore */ }
+        try { _tcpClient?.Dispose(); } catch { /* Ignore */ }
+
         _tcpClient = new TcpClient();
 
         _logger.LogInformation("Connecting to Modbus TCP server at {Host}:{Port}...", _options.Host, _options.Port);
@@ -137,6 +140,12 @@ public class ModbusTcpConnectionService : IDisposable
             throw new TimeoutException($"Connection to {_options.Host}:{_options.Port} timed out after {_options.ConnectionTimeoutMs}ms");
         }
 
+        // Configure TCP keep-alive for detecting dead connections
+        _tcpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+        _tcpClient.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 30);      // Start keep-alive after 30s idle
+        _tcpClient.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 10); // Send keep-alive every 10s
+        _tcpClient.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3); // 3 retries before disconnect
+
         _tcpClient.ReceiveTimeout = _options.ReadTimeoutMs;
         _tcpClient.SendTimeout = _options.ReadTimeoutMs;
 
@@ -151,7 +160,57 @@ public class ModbusTcpConnectionService : IDisposable
         _reconnectAttempts = 0;
 
         _logger.LogInformation("Connected to Modbus TCP server at {Host}:{Port}", _options.Host, _options.Port);
-        OnConnectionStatusChanged?.Invoke(true, "Connected");
+        SafeInvokeConnectionStatusChanged(true, "Connected");
+    }
+
+    /// <summary>
+    /// Safely invoke event without breaking caller on exception
+    /// </summary>
+    private void SafeInvokeConnectionStatusChanged(bool connected, string message)
+    {
+        try
+        {
+            OnConnectionStatusChanged?.Invoke(connected, message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error in OnConnectionStatusChanged event handler");
+        }
+    }
+
+    /// <summary>
+    /// Safely invoke data received event
+    /// </summary>
+    private void SafeInvokeDataReceived(ModbusDataPoint dataPoint)
+    {
+        try
+        {
+            OnDataReceived?.Invoke(dataPoint);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error in OnDataReceived event handler");
+        }
+    }
+
+    /// <summary>
+    /// Checks if TCP connection is actually alive (not just Connected property)
+    /// </summary>
+    private bool IsConnectionAlive()
+    {
+        if (_tcpClient == null || !_tcpClient.Connected)
+            return false;
+
+        try
+        {
+            // Poll the socket to check if it's still connected
+            var socket = _tcpClient.Client;
+            return !(socket.Poll(1000, SelectMode.SelectRead) && socket.Available == 0);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -180,7 +239,14 @@ public class ModbusTcpConnectionService : IDisposable
         {
             try
             {
-                if (_tcpClient?.Connected != true)
+                if (_disposed)
+                {
+                    _logger.LogDebug("Service disposed, stopping polling");
+                    break;
+                }
+
+                // Use IsConnectionAlive() for more reliable connection detection
+                if (!IsConnectionAlive())
                 {
                     await TriggerReconnectAsync(cancellationToken);
                     continue;
@@ -192,7 +258,7 @@ public class ModbusTcpConnectionService : IDisposable
                 {
                     Interlocked.Increment(ref _totalReadsCompleted);
                     _lastSuccessfulRead = DateTime.UtcNow;
-                    OnDataReceived?.Invoke(dataPoint);
+                    SafeInvokeDataReceived(dataPoint);
                 }
 
                 await Task.Delay(_options.PollingIntervalMs, cancellationToken);
@@ -201,17 +267,37 @@ public class ModbusTcpConnectionService : IDisposable
             {
                 break;
             }
+            catch (ObjectDisposedException)
+            {
+                _logger.LogDebug("Service disposed during polling");
+                break;
+            }
             catch (Exception ex) when (IsConnectionError(ex))
             {
                 Interlocked.Increment(ref _totalErrors);
                 _logger.LogWarning("Connection error during polling: {Error}", ex.Message);
-                await TriggerReconnectAsync(cancellationToken);
+
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    await TriggerReconnectAsync(cancellationToken);
+                }
             }
             catch (Exception ex)
             {
                 Interlocked.Increment(ref _totalErrors);
                 _logger.LogError(ex, "Error during register polling");
-                await Task.Delay(1000, cancellationToken);
+
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(1000, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
             }
         }
 
@@ -539,6 +625,8 @@ public class ModbusTcpConnectionService : IDisposable
 
     private async Task TriggerReconnectAsync(CancellationToken cancellationToken)
     {
+        if (_disposed) return;
+
         if (!await _reconnectLock.WaitAsync(0, cancellationToken))
         {
             return; // Another reconnection is in progress
@@ -547,7 +635,7 @@ public class ModbusTcpConnectionService : IDisposable
         try
         {
             _isReconnecting = true;
-            OnConnectionStatusChanged?.Invoke(false, "Reconnecting...");
+            SafeInvokeConnectionStatusChanged(false, "Reconnecting...");
 
             while (!cancellationToken.IsCancellationRequested)
             {

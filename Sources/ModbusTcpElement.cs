@@ -292,6 +292,9 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
         _inOutSubject.InputSubject.OnCompleted();
         _inOutSubject.OutputSubject.OnCompleted();
 
+        // Dispose CancellationTokenSource
+        try { _cts.Dispose(); } catch { /* Ignore */ }
+
         // Log final statistics
         var health = _connectionService.Health;
         Log(LogLevel.Information, $"Modbus TCP Element destroyed. Stats: Reads={health.TotalReadsCompleted}, " +
