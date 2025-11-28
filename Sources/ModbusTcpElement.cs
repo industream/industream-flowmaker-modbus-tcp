@@ -321,7 +321,8 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
                 ReadTimeoutMs = 3000,
                 Retries = 3,
                 RetryDelayMs = 500,
-                Registers = "# Format: name:type:address[:length]\n# temperature:holding:0:1"
+                ByteOrderStr = "BigEndian",
+                Registers = "# Format: name:type:address[:datatype]\n# temperature:holding:0:float32"
             })
             .Build((meta, services) => new ModbusTcpElement(meta, services));
 

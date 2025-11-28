@@ -33,6 +33,9 @@ public class ModbusValue
     [Key("type")]
     public string Type { get; set; } = "";
 
+    [Key("dataType")]
+    public string DataType { get; set; } = "UInt16";
+
     [Key("address")]
     public ushort Address { get; set; }
 

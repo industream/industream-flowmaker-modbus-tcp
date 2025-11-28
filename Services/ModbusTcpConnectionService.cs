@@ -244,7 +244,8 @@ public class ModbusTcpConnectionService : IDisposable
         {
             Name = register.Name,
             Type = register.Type.ToString(),
-            Address = register.Address
+            Address = register.Address,
+            DataType = register.DataType.ToString()
         };
 
         if (_modbusMaster == null)
@@ -271,13 +272,13 @@ public class ModbusTcpConnectionService : IDisposable
                 case RegisterType.HoldingRegister:
                     var holdingRegisters = await _modbusMaster.ReadHoldingRegistersAsync(_options.SlaveId, register.Address, register.Length);
                     value.RawValues = holdingRegisters;
-                    value.Value = register.Length == 1 ? holdingRegisters[0] : holdingRegisters;
+                    value.Value = ConvertRegistersToValue(holdingRegisters, register.DataType, _options.GetByteOrder());
                     break;
 
                 case RegisterType.InputRegister:
                     var inputRegisters = await _modbusMaster.ReadInputRegistersAsync(_options.SlaveId, register.Address, register.Length);
                     value.RawValues = inputRegisters;
-                    value.Value = register.Length == 1 ? inputRegisters[0] : inputRegisters;
+                    value.Value = ConvertRegistersToValue(inputRegisters, register.DataType, _options.GetByteOrder());
                     break;
             }
 
@@ -292,6 +293,173 @@ public class ModbusTcpConnectionService : IDisposable
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Converts raw register values to the appropriate data type with byte order handling
+    /// </summary>
+    private static object ConvertRegistersToValue(ushort[] registers, DataType dataType, ByteOrder byteOrder)
+    {
+        if (registers == null || registers.Length == 0)
+            return 0;
+
+        // Reorder registers based on byte order
+        var orderedRegisters = ReorderRegisters(registers, byteOrder);
+
+        return dataType switch
+        {
+            DataType.Int16 => (short)orderedRegisters[0],
+            DataType.UInt16 => orderedRegisters[0],
+            DataType.Int32 when orderedRegisters.Length >= 2 => ToInt32(orderedRegisters, byteOrder),
+            DataType.UInt32 when orderedRegisters.Length >= 2 => ToUInt32(orderedRegisters, byteOrder),
+            DataType.Float32 when orderedRegisters.Length >= 2 => ToFloat32(orderedRegisters, byteOrder),
+            DataType.Int64 when orderedRegisters.Length >= 4 => ToInt64(orderedRegisters, byteOrder),
+            DataType.UInt64 when orderedRegisters.Length >= 4 => ToUInt64(orderedRegisters, byteOrder),
+            DataType.Float64 when orderedRegisters.Length >= 4 => ToFloat64(orderedRegisters, byteOrder),
+            DataType.Boolean => orderedRegisters[0] != 0,
+            DataType.String => RegistersToString(orderedRegisters),
+            _ => orderedRegisters.Length == 1 ? orderedRegisters[0] : orderedRegisters
+        };
+    }
+
+    /// <summary>
+    /// Reorders registers based on byte order for word-level ordering
+    /// </summary>
+    private static ushort[] ReorderRegisters(ushort[] registers, ByteOrder byteOrder)
+    {
+        if (registers.Length <= 1)
+            return registers;
+
+        var result = new ushort[registers.Length];
+
+        switch (byteOrder)
+        {
+            case ByteOrder.BigEndian: // ABCD - standard, no reordering needed
+                Array.Copy(registers, result, registers.Length);
+                break;
+
+            case ByteOrder.LittleEndian: // DCBA - reverse word order
+                for (int i = 0; i < registers.Length; i++)
+                    result[i] = registers[registers.Length - 1 - i];
+                break;
+
+            case ByteOrder.BigEndianByteSwap: // BADC - swap bytes within each word
+                for (int i = 0; i < registers.Length; i++)
+                    result[i] = SwapBytes(registers[i]);
+                break;
+
+            case ByteOrder.LittleEndianByteSwap: // CDAB - reverse word order and swap bytes
+                for (int i = 0; i < registers.Length; i++)
+                    result[i] = SwapBytes(registers[registers.Length - 1 - i]);
+                break;
+        }
+
+        return result;
+    }
+
+    private static ushort SwapBytes(ushort value)
+    {
+        return (ushort)((value >> 8) | (value << 8));
+    }
+
+    private static int ToInt32(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 2, byteOrder);
+        return BitConverter.ToInt32(bytes, 0);
+    }
+
+    private static uint ToUInt32(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 2, byteOrder);
+        return BitConverter.ToUInt32(bytes, 0);
+    }
+
+    private static float ToFloat32(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 2, byteOrder);
+        return BitConverter.ToSingle(bytes, 0);
+    }
+
+    private static long ToInt64(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 4, byteOrder);
+        return BitConverter.ToInt64(bytes, 0);
+    }
+
+    private static ulong ToUInt64(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 4, byteOrder);
+        return BitConverter.ToUInt64(bytes, 0);
+    }
+
+    private static double ToFloat64(ushort[] registers, ByteOrder byteOrder)
+    {
+        var bytes = GetBytesFromRegisters(registers, 4, byteOrder);
+        return BitConverter.ToDouble(bytes, 0);
+    }
+
+    /// <summary>
+    /// Converts registers to bytes with proper byte order handling
+    /// </summary>
+    private static byte[] GetBytesFromRegisters(ushort[] registers, int count, ByteOrder byteOrder)
+    {
+        var bytes = new byte[count * 2];
+
+        for (int i = 0; i < count && i < registers.Length; i++)
+        {
+            var regBytes = BitConverter.GetBytes(registers[i]);
+
+            // Handle byte order within registers
+            switch (byteOrder)
+            {
+                case ByteOrder.BigEndian:
+                case ByteOrder.LittleEndian:
+                    // Big-endian byte order within register
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        bytes[i * 2] = regBytes[1];
+                        bytes[i * 2 + 1] = regBytes[0];
+                    }
+                    else
+                    {
+                        bytes[i * 2] = regBytes[0];
+                        bytes[i * 2 + 1] = regBytes[1];
+                    }
+                    break;
+
+                case ByteOrder.BigEndianByteSwap:
+                case ByteOrder.LittleEndianByteSwap:
+                    // Little-endian byte order within register (swapped)
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        bytes[i * 2] = regBytes[0];
+                        bytes[i * 2 + 1] = regBytes[1];
+                    }
+                    else
+                    {
+                        bytes[i * 2] = regBytes[1];
+                        bytes[i * 2 + 1] = regBytes[0];
+                    }
+                    break;
+            }
+        }
+
+        // BitConverter expects little-endian on most systems
+        if (!BitConverter.IsLittleEndian)
+            Array.Reverse(bytes);
+
+        return bytes;
+    }
+
+    private static string RegistersToString(ushort[] registers)
+    {
+        var bytes = new byte[registers.Length * 2];
+        for (int i = 0; i < registers.Length; i++)
+        {
+            bytes[i * 2] = (byte)(registers[i] >> 8);
+            bytes[i * 2 + 1] = (byte)(registers[i] & 0xFF);
+        }
+        return System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0');
     }
 
     private async Task TriggerReconnectAsync(CancellationToken cancellationToken)
