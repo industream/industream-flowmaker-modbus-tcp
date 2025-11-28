@@ -178,6 +178,13 @@ public class ModbusTcpOptions
                 };
             }
 
+            // Parse quantity (5th part) - number of values to read
+            ushort quantity = 1;
+            if (parts.Length >= 5 && ushort.TryParse(parts[4].Trim(), out var parsedQuantity))
+            {
+                quantity = parsedQuantity;
+            }
+
             var regType = typeStr switch
             {
                 "coil" or "coils" => RegisterType.Coil,
@@ -193,13 +200,14 @@ public class ModbusTcpOptions
                 dataType = DataType.Boolean;
             }
 
-            // Calculate required register count based on data type
-            ushort length = dataType switch
+            // Calculate required register count based on data type and quantity
+            ushort registersPerValue = dataType switch
             {
                 DataType.UInt32 or DataType.Int32 or DataType.Float32 => 2,
                 DataType.UInt64 or DataType.Int64 or DataType.Float64 => 4,
                 _ => 1
             };
+            ushort length = (ushort)(registersPerValue * quantity);
 
             result.Add(new RegisterDefinition
             {
@@ -207,7 +215,8 @@ public class ModbusTcpOptions
                 Type = regType,
                 Address = address,
                 Length = length,
-                DataType = dataType
+                DataType = dataType,
+                Quantity = quantity
             });
         }
 
@@ -240,4 +249,5 @@ public class RegisterDefinition
     public ushort Address { get; set; }
     public ushort Length { get; set; } = 1;
     public DataType DataType { get; set; } = DataType.UInt16;
+    public ushort Quantity { get; set; } = 1;
 }

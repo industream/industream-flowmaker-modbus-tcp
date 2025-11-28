@@ -272,13 +272,13 @@ public class ModbusTcpConnectionService : IDisposable
                 case RegisterType.HoldingRegister:
                     var holdingRegisters = await _modbusMaster.ReadHoldingRegistersAsync(_options.SlaveId, register.Address, register.Length);
                     value.RawValues = holdingRegisters;
-                    value.Value = ConvertRegistersToValue(holdingRegisters, register.DataType, _options.GetByteOrder());
+                    value.Value = ConvertRegistersToValue(holdingRegisters, register.DataType, register.Quantity, _options.GetByteOrder());
                     break;
 
                 case RegisterType.InputRegister:
                     var inputRegisters = await _modbusMaster.ReadInputRegistersAsync(_options.SlaveId, register.Address, register.Length);
                     value.RawValues = inputRegisters;
-                    value.Value = ConvertRegistersToValue(inputRegisters, register.DataType, _options.GetByteOrder());
+                    value.Value = ConvertRegistersToValue(inputRegisters, register.DataType, register.Quantity, _options.GetByteOrder());
                     break;
             }
 
@@ -298,11 +298,86 @@ public class ModbusTcpConnectionService : IDisposable
     /// <summary>
     /// Converts raw register values to the appropriate data type with byte order handling
     /// </summary>
-    private static object ConvertRegistersToValue(ushort[] registers, DataType dataType, ByteOrder byteOrder)
+    private static object ConvertRegistersToValue(ushort[] registers, DataType dataType, ushort quantity, ByteOrder byteOrder)
     {
         if (registers == null || registers.Length == 0)
             return 0;
 
+        // If quantity > 1, return an array of values
+        if (quantity > 1)
+        {
+            return ConvertRegistersToArray(registers, dataType, quantity, byteOrder);
+        }
+
+        // Single value conversion
+        return ConvertSingleValue(registers, dataType, byteOrder);
+    }
+
+    /// <summary>
+    /// Converts registers to an array of values
+    /// </summary>
+    private static object ConvertRegistersToArray(ushort[] registers, DataType dataType, ushort quantity, ByteOrder byteOrder)
+    {
+        int registersPerValue = dataType switch
+        {
+            DataType.UInt32 or DataType.Int32 or DataType.Float32 => 2,
+            DataType.UInt64 or DataType.Int64 or DataType.Float64 => 4,
+            _ => 1
+        };
+
+        return dataType switch
+        {
+            DataType.Int16 => ExtractArray(registers, quantity, registersPerValue, byteOrder,
+                (regs, bo) => (short)regs[0]),
+            DataType.UInt16 => ExtractUInt16Array(registers, quantity),
+            DataType.Int32 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToInt32),
+            DataType.UInt32 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToUInt32),
+            DataType.Float32 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToFloat32),
+            DataType.Int64 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToInt64),
+            DataType.UInt64 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToUInt64),
+            DataType.Float64 => ExtractArray(registers, quantity, registersPerValue, byteOrder, ToFloat64),
+            DataType.Boolean => registers.Select(r => r != 0).ToArray(),
+            DataType.String => RegistersToString(registers),
+            _ => registers
+        };
+    }
+
+    /// <summary>
+    /// Extracts an array of UInt16 values (simple case, no conversion needed)
+    /// </summary>
+    private static ushort[] ExtractUInt16Array(ushort[] registers, ushort quantity)
+    {
+        var result = new ushort[Math.Min(quantity, registers.Length)];
+        Array.Copy(registers, result, result.Length);
+        return result;
+    }
+
+    /// <summary>
+    /// Generic method to extract an array of converted values
+    /// </summary>
+    private static T[] ExtractArray<T>(ushort[] registers, ushort quantity, int registersPerValue, ByteOrder byteOrder,
+        Func<ushort[], ByteOrder, T> converter)
+    {
+        var result = new List<T>();
+        for (int i = 0; i < quantity && (i * registersPerValue) < registers.Length; i++)
+        {
+            int startIndex = i * registersPerValue;
+            int length = Math.Min(registersPerValue, registers.Length - startIndex);
+            var slice = new ushort[length];
+            Array.Copy(registers, startIndex, slice, 0, length);
+
+            // Reorder the slice based on byte order
+            var orderedSlice = ReorderRegisters(slice, byteOrder);
+            result.Add(converter(orderedSlice, byteOrder));
+        }
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// Converts a single value from registers
+    /// </summary>
+    private static object ConvertSingleValue(ushort[] registers, DataType dataType, ByteOrder byteOrder)
+    {
         // Reorder registers based on byte order
         var orderedRegisters = ReorderRegisters(registers, byteOrder);
 
