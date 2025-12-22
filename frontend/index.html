@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en" class="cds--g90">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowBox UI Dev - source</title>
+
+    <!-- Carbon Design System -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@carbon/styles@1/css/styles.min.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@2/+esm"></script>
+
+    <!-- CodeMirror -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/ambiance.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/fold/brace-fold.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/fold/foldgutter.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/addon/fold/foldgutter.min.css">
+
+    <style>
+        .theme-toggle {
+            background: var(--cds-layer-01);
+            border: 1px solid var(--cds-border-subtle);
+            border-radius: 4px;
+            padding: 0.5rem;
+            cursor: pointer;
+            color: var(--cds-text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .theme-toggle:hover {
+            background: var(--cds-layer-02);
+        }
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            padding: 2rem;
+            background: var(--cds-background);
+            color: var(--cds-text-primary);
+        }
+        .dev-header {
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--cds-border-subtle);
+        }
+        .dev-header h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.5rem;
+        }
+        .dev-header p {
+            margin: 0;
+            color: var(--cds-text-secondary);
+            font-size: 0.875rem;
+        }
+        .dev-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            background: var(--cds-layer-01);
+            border-radius: 4px;
+        }
+        .validity-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .validity-indicator.valid {
+            color: #24a148;
+        }
+        .validity-indicator.invalid {
+            color: #da1e28;
+        }
+        #config-target {
+            padding: 1rem;
+            border: 1px solid var(--cds-border-subtle);
+            border-radius: 4px;
+            min-height: 200px;
+        }
+        .dev-footer {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--cds-border-subtle);
+        }
+        .dev-footer pre {
+            background: var(--cds-layer-02);
+            padding: 1rem;
+            border-radius: 4px;
+            overflow: auto;
+            font-size: 0.75rem;
+        }
+        .CodeMirror {
+            height: 200px;
+            border: 1px solid var(--cds-border-subtle);
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        #context-editor + .CodeMirror {
+            height: 260px;
+        }
+        .editor-section {
+            margin-bottom: 1rem;
+        }
+        .editor-section h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 0.875rem;
+        }
+        .editor-hint {
+            font-size: 0.75rem;
+            color: var(--cds-text-secondary);
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="dev-header">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1>FlowBox UI Dev: source</h1>
+                <p>Edit <code>src/source/ConfigForm.svelte</code> - changes will auto-reload</p>
+            </div>
+            <button id="theme-toggle" class="theme-toggle" title="Toggle theme">
+                <svg id="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="dev-toolbar">
+        <div id="validity-indicator" class="validity-indicator valid">Validity: ✓ Valid</div>
+        <div style="flex: 1"></div>
+        <span style="font-size: 0.875rem;">Auto-inject</span>
+        <cds-toggle id="auto-inject-toggle" size="md" checked></cds-toggle>
+        <cds-button id="inject-btn" size="sm" kind="secondary">Inject Values</cds-button>
+        <cds-button id="save-btn" size="sm">Save (Ctrl+S)</cds-button>
+        <button id="remount-btn" title="Remount component" style="background: var(--cds-button-primary); border: none; border-radius: 4px; width: 32px; height: 32px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: -15px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </button>
+    </div>
+
+    <div id="config-target"></div>
+
+    <div class="dev-footer">
+        <div class="editor-section">
+            <h3>Current Values <span class="editor-hint">(editable - changes update the form)</span></h3>
+            <textarea id="values-editor"></textarea>
+        </div>
+        <div class="editor-section">
+            <h3>Context <span class="editor-hint">(editable - changes update the form)</span></h3>
+            <textarea id="context-editor"></textarea>
+        </div>
+    </div>
+
+    <script type="module">
+        // Mock register function (must be defined before import)
+        let configInstance = null;
+        let valuesEditor, contextEditor;
+        let isValid = true;
+        let currentValidity = {};
+
+        window.register = (name, instance) => {
+            console.log(`Registered: ${name}`);
+            configInstance = instance;
+            initComponent();
+        };
+
+        // Load the component dynamically
+        await import('/src/source/main.js');
+
+        // Theme toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        const sunIcon = document.getElementById('sun-icon');
+        const moonIcon = document.getElementById('moon-icon');
+
+        function updateThemeIcons() {
+            const isDark = document.documentElement.classList.contains('cds--g90');
+            sunIcon.style.display = isDark ? 'block' : 'none';
+            moonIcon.style.display = isDark ? 'none' : 'block';
+        }
+
+        function updateCodeMirrorTheme() {
+            const isDark = document.documentElement.classList.contains('cds--g90');
+            const cmTheme = isDark ? 'ambiance' : 'default';
+            if (valuesEditor) valuesEditor.setOption('theme', cmTheme);
+            if (contextEditor) contextEditor.setOption('theme', cmTheme);
+        }
+
+        themeToggle.addEventListener('click', () => {
+            const html = document.documentElement;
+            if (html.classList.contains('cds--g90')) {
+                html.classList.replace('cds--g90', 'cds--g10');
+            } else {
+                html.classList.replace('cds--g10', 'cds--g90');
+            }
+            updateThemeIcons();
+            updateCodeMirrorTheme();
+        });
+
+        updateThemeIcons();
+
+        function updateValidityIndicator() {
+            const indicator = document.getElementById('validity-indicator');
+            const saveBtn = document.getElementById('save-btn');
+
+            // Handle both boolean and object validity
+            if (typeof currentValidity === 'boolean') {
+                isValid = currentValidity;
+            } else {
+                isValid = !Object.values(currentValidity).some(v => v === true);
+            }
+
+            if (isValid) {
+                indicator.className = 'validity-indicator valid';
+                indicator.textContent = 'Validity: ✓ Valid';
+                saveBtn.removeAttribute('disabled');
+            } else {
+                indicator.className = 'validity-indicator invalid';
+                indicator.textContent = 'Validity: ✗ Invalid';
+                saveBtn.setAttribute('disabled', '');
+            }
+            console.log('Validity state:', { currentValidity, isValid });
+        }
+
+        function injectValues() {
+            try {
+                const values = JSON.parse(valuesEditor.getValue());
+                const context = JSON.parse(contextEditor.getValue());
+                configInstance.setProps({ values, context });
+                console.log('Injected values and context');
+            } catch (e) {
+                console.error('Failed to inject - invalid JSON:', e);
+            }
+        }
+
+        function triggerSave() {
+            if (!isValid) {
+                console.log('Cannot save - form is invalid');
+                return;
+            }
+            console.log('Triggering save event...');
+            configInstance.sendEvent('save', {});
+        }
+
+        async function initComponent() {
+            // Initialize CodeMirror editors
+            const cmOptions = {
+                mode: { name: 'javascript', json: true },
+                lineNumbers: true,
+                matchBrackets: true,
+                foldGutter: true,
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+                theme: 'ambiance'
+            };
+
+            valuesEditor = CodeMirror.fromTextArea(
+                document.getElementById('values-editor'), cmOptions
+            );
+            contextEditor = CodeMirror.fromTextArea(
+                document.getElementById('context-editor'), cmOptions
+            );
+
+            // Load test config
+            let config = { values: {}, context: {} };
+            try {
+                const res = await fetch('/src/source/test/config.json');
+                if (res.ok) config = await res.json();
+            } catch (e) {
+                console.log('No test/config.json found, using defaults');
+            }
+
+            // Set initial editor values
+            valuesEditor.setValue(JSON.stringify(config.values || {}, null, 2));
+            contextEditor.setValue(JSON.stringify(config.context || {}, null, 2));
+
+            // Mount component
+            configInstance.mount('config-target');
+
+            // Send initial props
+            setTimeout(() => {
+                configInstance.setProps({
+                    values: config.values || {},
+                    context: config.context || {}
+                });
+            }, 100);
+
+            // Update form when editors change
+            let editorUpdateTimeout;
+            valuesEditor.on('change', () => {
+                clearTimeout(editorUpdateTimeout);
+                editorUpdateTimeout = setTimeout(() => {
+                    const autoInject = document.getElementById('auto-inject-toggle').checked;
+                    if (!autoInject) return;
+                    try {
+                        const values = JSON.parse(valuesEditor.getValue());
+                        configInstance.setProps({ values });
+                    } catch (e) { /* invalid JSON */ }
+                }, 300);
+            });
+
+            contextEditor.on('change', () => {
+                clearTimeout(editorUpdateTimeout);
+                editorUpdateTimeout = setTimeout(() => {
+                    try {
+                        const context = JSON.parse(contextEditor.getValue());
+                        configInstance.setProps({ context });
+                    } catch (e) { /* invalid JSON */ }
+                }, 300);
+            });
+
+            // Listen for value changes from component
+            configInstance.on('values', (data) => {
+                console.log('Values updated:', data);
+                const cursor = valuesEditor.getCursor();
+                valuesEditor.setValue(JSON.stringify(data, null, 2));
+                valuesEditor.setCursor(cursor);
+            });
+
+            configInstance.on('validity', (data) => {
+                console.log('Validity updated:', data);
+                currentValidity = data;
+                updateValidityIndicator();
+            });
+
+            configInstance.on('save', (data) => {
+                console.log('Save triggered with values:', data);
+                valuesEditor.setValue(JSON.stringify(data, null, 2));
+            });
+
+            // Remount function
+            function remountComponent() {
+                console.log('Remounting component...');
+                configInstance.unmount();
+                configInstance.mount('config-target');
+                currentValidity = {};
+                isValid = true;
+                updateValidityIndicator();
+                setTimeout(injectValues, 100);
+            }
+
+            // Button click handlers
+            document.getElementById('save-btn').addEventListener('click', triggerSave);
+            document.getElementById('inject-btn').addEventListener('click', injectValues);
+            document.getElementById('remount-btn').addEventListener('click', remountComponent);
+
+            // Ctrl+S to save
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    triggerSave();
+                }
+            });
+
+            // Auto-inject values on HMR (Vite hot reload)
+            if (import.meta.hot) {
+                import.meta.hot.on('vite:afterUpdate', () => {
+                    console.log('HMR update detected - auto-injecting values, resetting validity');
+                    currentValidity = {};
+                    isValid = true;
+                    updateValidityIndicator();
+                    setTimeout(injectValues, 100);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

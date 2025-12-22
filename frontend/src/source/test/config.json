@@ -1,0 +1,228 @@
+{
+  "values": {
+    "myField": "Hello from config.json"
+  },
+  "context": {
+    "nodeDefinition": {
+      "position": {
+        "x": 128.00347137451172,
+        "y": -576.0868377685547
+      },
+      "inputs": [
+        {
+          "id": "default-5"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "default-6"
+        }
+      ],
+      "flowElement": {
+        "name": "JavaScript Expression",
+        "icon": "javascript",
+        "type": "sink",
+        "id": "vendor/my-box/1.0.1",
+        "options": {
+          "myField": "Hello from config.json"
+        },
+        "displayName": null,
+        "showDisplayName": false,
+        "showFlowBoxId": true
+      },
+      "id": "node/5"
+    },
+    "flowRepoItem": {
+      "repositoryItem": {
+        "definition": {
+          "flow": {
+            "nodes": [
+              {
+                "position": {
+                  "x": 128.00345993041992,
+                  "y": -416.086820602417
+                },
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "default-1",
+                    "displayName": "Default"
+                  }
+                ],
+                "flowElement": {
+                  "name": "Timer",
+                  "icon": "timer_10_alt_1",
+                  "type": "source",
+                  "id": "industream/timer/1.0.1",
+                  "options": {
+                    "dataKey": "field1",
+                    "dataIncrement": 100,
+                    "pushIntervalMs": 1200,
+                    "useRangeWidget": false
+                  },
+                  "displayName": null,
+                  "showDisplayName": false,
+                  "showFlowBoxId": true
+                },
+                "id": "node/1"
+              },
+              {
+                "position": {
+                  "x": 832.0034484863281,
+                  "y": -32.08687210083008
+                },
+                "inputs": [
+                  {
+                    "id": "default-2",
+                    "displayName": "Default"
+                  }
+                ],
+                "outputs": [],
+                "flowElement": {
+                  "name": "Flow Data Logger",
+                  "icon": "data_loss_prevention",
+                  "type": "sink",
+                  "id": "industream/data-logger/1.0.2",
+                  "options": {
+                    "useWidget": false,
+                    "displayField": "field1",
+                    "displayString": "Log {{value}}",
+                    "displayUpdateMs": 300,
+                    "icon": "info"
+                  },
+                  "displayName": null,
+                  "showDisplayName": false,
+                  "showFlowBoxId": true
+                },
+                "id": "node/2"
+              },
+              {
+                "position": {
+                  "x": 832.0034103393555,
+                  "y": -256.0868158340454
+                },
+                "inputs": [
+                  {
+                    "id": "default-4",
+                    "displayName": "Default"
+                  }
+                ],
+                "outputs": [],
+                "flowElement": {
+                  "name": "Flow Data Logger",
+                  "icon": "data_loss_prevention",
+                  "type": "sink",
+                  "id": "industream/data-logger-new/1.0.2",
+                  "options": {
+                    "useWidget": false,
+                    "displayField": "field1",
+                    "displayString": "Log {{value}}",
+                    "displayUpdateMs": 300,
+                    "icon": "info"
+                  },
+                  "displayName": null,
+                  "showDisplayName": false,
+                  "showFlowBoxId": true
+                },
+                "id": "node/4"
+              },
+              {
+                "position": {
+                  "x": 128.00347137451172,
+                  "y": -576.0868377685547
+                },
+                "inputs": [
+                  {
+                    "id": "default-5"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "default-6"
+                  }
+                ],
+                "flowElement": {
+                  "name": "JavaScript Expression",
+                  "icon": "javascript",
+                  "type": "sink",
+                  "id": "vendor/my-box/1.0.1",
+                  "options": {
+                    "myField": "Hello from config.json"
+                  },
+                  "displayName": null,
+                  "showDisplayName": false,
+                  "showFlowBoxId": true
+                },
+                "id": "node/5"
+              }
+            ],
+            "connections": [
+              {
+                "id": "conn-1",
+                "from": "node/1/default-1",
+                "to": "node/2/default-2"
+              },
+              {
+                "id": "conn-3",
+                "from": "node/1/default-1",
+                "to": "node/4/default-4"
+              }
+            ]
+          },
+          "sequences": {
+            "sequenceId": 5,
+            "connSequenceId": 3,
+            "outputSequenceId": 6
+          }
+        },
+        "displayName": "Timer Flow with Three Loggers",
+        "id": "zw3jyuf62e7jz3nhhq63by7q",
+        "version": "1.0.0",
+        "edited": "2025-12-15T11:15:24.939Z",
+        "uniqueId": "zw3jyuf62e7jz3nhhq63by7q"
+      },
+      "lastEditAt": "2025-12-15T11:15:24.939Z",
+      "published": false,
+      "tags": []
+    },
+    "flowBoxRegistrationInfo": {
+      "id": "vendor/my-box",
+      "displayName": "JavaScript Expression",
+      "currentVersion": "1.0.1",
+      "type": "sink",
+      "icon": "javascript",
+      "stateless": true,
+      "agent": "flowmaker-node/1.0.0;os=linux;tag=docker;",
+      "workerDataConnectionString": "tcp://worker-js-expression:5560",
+      "ioInterfaces": {
+        "inputs": [
+          {
+            "name": "default",
+            "supportedFormats": [
+              "msgpack"
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "name": "default",
+            "supportedFormats": [
+              "msgpack"
+            ]
+          }
+        ],
+        "allowInputOverride": true,
+        "allowOutputOverride": true
+      },
+      "uiConfig": {
+        "type": "js-bundle",
+        "defaultOptions": {
+          "myField": "Hello from config.json"
+        }
+      }
+    },
+    "environmentVars": {
+      "environment/datacatalog": "{ \"url\": \"http://localhost:8002\" }"
+    }
+  }
+}

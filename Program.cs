@@ -27,7 +27,7 @@ var host = Host.CreateDefaultBuilder(args)
 
 var logger = host.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("===========================================");
-logger.LogInformation("  FlowMaker Modbus TCP Client v1.0.0");
+logger.LogInformation("  FlowMaker Modbus TCP Client v2.0.5");
 logger.LogInformation("===========================================");
 
 // Log environment configuration

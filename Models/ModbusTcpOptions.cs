@@ -44,32 +44,18 @@ public enum DataType
 
 /// <summary>
 /// Configuration options for the Modbus TCP Flow Box
-/// Production-ready with reliability settings
+/// Connection parameters are retrieved from DataCatalog via SourceConnectionId
 /// </summary>
 public class ModbusTcpOptions
 {
-    private string _host = "localhost";
     private string _registers = "";
     private string _byteOrder = "BigEndian";
 
     /// <summary>
-    /// Modbus TCP server hostname or IP address
+    /// SourceConnection ID from DataCatalog (GUID)
+    /// The connection parameters (host, port, slaveId) are stored in DataCatalog
     /// </summary>
-    public string Host
-    {
-        get => _host;
-        set => _host = string.IsNullOrWhiteSpace(value) ? "localhost" : value;
-    }
-
-    /// <summary>
-    /// Modbus TCP server port (default: 502)
-    /// </summary>
-    public int Port { get; set; } = 502;
-
-    /// <summary>
-    /// Modbus slave/unit ID (1-247)
-    /// </summary>
-    public byte SlaveId { get; set; } = 1;
+    public string? SourceConnectionId { get; set; }
 
     /// <summary>
     /// Polling interval in milliseconds
@@ -222,6 +208,12 @@ public class ModbusTcpOptions
 
         return result;
     }
+
+    // ============ Internal: Connection parameters resolved from DataCatalog ============
+
+    internal string Host { get; set; } = "localhost";
+    internal int Port { get; set; } = 502;
+    internal byte SlaveId { get; set; } = 1;
 }
 
 /// <summary>

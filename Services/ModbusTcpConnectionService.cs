@@ -37,6 +37,10 @@ public class ModbusTcpConnectionService : IDisposable
     private long _totalErrors = 0;
     private readonly Stopwatch _uptimeStopwatch = new();
 
+    // Periodic status logging
+    private Timer? _statusTimer;
+    private const int StatusIntervalMs = 30000; // 30 seconds
+
     /// <summary>
     /// Event raised when data is read from registers
     /// </summary>
@@ -73,6 +77,55 @@ public class ModbusTcpConnectionService : IDisposable
 
         _logger.LogInformation("ModbusTcpConnectionService initialized for {Host}:{Port}, SlaveId={SlaveId}, Registers={Count}",
             options.Host, options.Port, options.SlaveId, _registerDefinitions.Count);
+
+        // Start periodic status logging
+        _statusTimer = new Timer(LogPeriodicStatus, null, StatusIntervalMs, StatusIntervalMs);
+    }
+
+    /// <summary>
+    /// Logs periodic status information every 30 seconds
+    /// </summary>
+    private void LogPeriodicStatus(object? state)
+    {
+        try
+        {
+            var health = Health;
+            var lastReadAgo = health.LastSuccessfulRead != DateTime.MinValue
+                ? $"{(DateTime.UtcNow - health.LastSuccessfulRead).TotalSeconds:F1}s ago"
+                : "never";
+
+            if (health.IsHealthy)
+            {
+                _logger.LogInformation(
+                    "[STATUS] OK | Connected={Connected} | Host={Host}:{Port} | SlaveId={SlaveId} | " +
+                    "Reads={Reads} | Errors={Errors} | LastRead={LastRead} | Uptime={Uptime:F0}s",
+                    health.IsConnected,
+                    _options.Host,
+                    _options.Port,
+                    _options.SlaveId,
+                    health.TotalReadsCompleted,
+                    health.TotalErrors,
+                    lastReadAgo,
+                    health.UptimeSeconds);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "[STATUS] DEGRADED | Connected={Connected} | Reconnecting={Reconnecting} | " +
+                    "Host={Host}:{Port} | ReconnectAttempts={Attempts} | Errors={Errors} | LastRead={LastRead}",
+                    health.IsConnected,
+                    health.IsReconnecting,
+                    _options.Host,
+                    _options.Port,
+                    health.ReconnectAttempts,
+                    health.TotalErrors,
+                    lastReadAgo);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error logging periodic status");
+        }
     }
 
     private void ValidateOptions(ModbusTcpOptions options)
@@ -159,7 +212,11 @@ public class ModbusTcpConnectionService : IDisposable
         _currentReconnectDelay = InitialReconnectDelayMs;
         _reconnectAttempts = 0;
 
-        _logger.LogInformation("Connected to Modbus TCP server at {Host}:{Port}", _options.Host, _options.Port);
+        _logger.LogInformation("========================================");
+        _logger.LogInformation("[CONNECTED] Modbus TCP server at {Host}:{Port}", _options.Host, _options.Port);
+        _logger.LogInformation("[CONNECTED] SlaveId={SlaveId}, Registers={Count}, PollingInterval={Interval}ms",
+            _options.SlaveId, _registerDefinitions.Count, _options.PollingIntervalMs);
+        _logger.LogInformation("========================================");
         SafeInvokeConnectionStatusChanged(true, "Connected");
     }
 
@@ -635,6 +692,9 @@ public class ModbusTcpConnectionService : IDisposable
         try
         {
             _isReconnecting = true;
+            _logger.LogWarning("========================================");
+            _logger.LogWarning("[DISCONNECTED] Lost connection to {Host}:{Port}", _options.Host, _options.Port);
+            _logger.LogWarning("========================================");
             SafeInvokeConnectionStatusChanged(false, "Reconnecting...");
 
             while (!cancellationToken.IsCancellationRequested)
@@ -684,7 +744,11 @@ public class ModbusTcpConnectionService : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _logger.LogInformation("Disposing ModbusTcpConnectionService...");
+        _logger.LogInformation("========================================");
+        _logger.LogInformation("[SHUTDOWN] Disposing ModbusTcpConnectionService...");
+
+        // Stop status timer
+        try { _statusTimer?.Dispose(); } catch { /* Ignore */ }
 
         _pollingCts?.Cancel();
 
@@ -710,8 +774,9 @@ public class ModbusTcpConnectionService : IDisposable
         _reconnectLock.Dispose();
         _pollingCts?.Dispose();
 
-        _logger.LogInformation("ModbusTcpConnectionService disposed. Total reads: {Reads}, Total errors: {Errors}",
-            _totalReadsCompleted, _totalErrors);
+        _logger.LogInformation("[SHUTDOWN] Final stats - Reads: {Reads}, Errors: {Errors}, Uptime: {Uptime:F0}s",
+            _totalReadsCompleted, _totalErrors, _uptimeStopwatch.Elapsed.TotalSeconds);
+        _logger.LogInformation("========================================");
     }
 }
 

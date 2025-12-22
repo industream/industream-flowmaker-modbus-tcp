@@ -1,4 +1,5 @@
 using FlowMaker.ModbusTcp.Models;
+using FlowMaker.ModbusTcp.Models.DataCatalog;
 using FlowMaker.ModbusTcp.Services;
 using Industream.FlowMaker.Sdk.Clients;
 using Industream.FlowMaker.Sdk.Elements;
@@ -17,10 +18,10 @@ namespace FlowMaker.ModbusTcp.Sources;
 /// </summary>
 internal static class UiConfigLoader
 {
-    public static string? GetConfigImplementation()
+    public static string? GetJsBundleImplementation()
     {
         var configPath = Environment.GetEnvironmentVariable("FM_WORKER_APP_CONFIG") ?? "/usr/app/config/";
-        var filePath = Path.Combine(configPath, "config.uimaker.json");
+        var filePath = Path.Combine(configPath, "config.source.jsbundle.js");
 
         if (File.Exists(filePath))
         {
@@ -34,7 +35,7 @@ internal static class UiConfigLoader
 
 /// <summary>
 /// Modbus TCP Source Flow Box - Reads data from a Modbus TCP server and pushes to downstream elements
-/// Production-ready with automatic reconnection, health monitoring, and proper error handling
+/// Connection parameters are retrieved from DataCatalog via SourceConnectionId
 /// </summary>
 public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
 {
@@ -44,7 +45,11 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
     private readonly ISerializer _serializer;
     private readonly Header _header;
     private readonly ModbusTcpOptions _options;
+    private readonly DataCatalogService _dataCatalogService;
     private Task? _pollingTask;
+
+    // Resolved configuration from DataCatalog
+    private ModbusTcpConnectionConfig? _resolvedConnectionConfig;
 
     // Error tracking
     private readonly ConcurrentQueue<DateTime> _recentErrors = new();
@@ -61,13 +66,20 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
 
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger<ModbusTcpConnectionService>();
+        var dataCatalogLogger = loggerFactory.CreateLogger<DataCatalogService>();
+
+        // Initialize DataCatalog service (always required)
+        var apiUrl = Environment.GetEnvironmentVariable("FM_DATACATALOG_URL") ?? "http://datacatalog-api:8002";
+        _dataCatalogService = new DataCatalogService(apiUrl, dataCatalogLogger);
+        Log(LogLevel.Information, $"DataCatalog API URL: {apiUrl}");
 
         _connectionService = new ModbusTcpConnectionService(_options, logger);
 
         var registers = _options.GetRegisterDefinitions();
-        Log(LogLevel.Information, $"Modbus TCP Element created for {_options.Host}:{_options.Port}");
-        Log(LogLevel.Information, $"Slave ID: {_options.SlaveId}, Polling interval: {_options.PollingIntervalMs}ms");
-        Log(LogLevel.Information, $"Monitoring {registers.Count} registers");
+        Log(LogLevel.Information, $"Modbus TCP Element created");
+        Log(LogLevel.Information, $"SourceConnectionId: {_options.SourceConnectionId}");
+        Log(LogLevel.Information, $"Polling interval: {_options.PollingIntervalMs}ms");
+        Log(LogLevel.Information, $"Configured {registers.Count} registers");
 
         // Subscribe to connection status changes
         _connectionService.OnConnectionStatusChanged += OnConnectionStatusChanged;
@@ -137,11 +149,22 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
         const int maxInitialRetries = 5;
         const int initialRetryDelayMs = 2000;
 
+        // Resolve configuration from DataCatalog
+        try
+        {
+            await ResolveDataCatalogConfigurationAsync(_cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Log(LogLevel.Error, $"Failed to resolve DataCatalog configuration: {ex.Message}");
+            throw new InvalidOperationException($"DataCatalog configuration required. Error: {ex.Message}", ex);
+        }
+
         while (!_cts.Token.IsCancellationRequested)
         {
             try
             {
-                Log(LogLevel.Information, "Connecting to Modbus TCP server...");
+                Log(LogLevel.Information, $"Connecting to Modbus TCP server: {_options.Host}:{_options.Port}...");
                 await _connectionService.ConnectAsync(_cts.Token);
                 Log(LogLevel.Information, "Connected to Modbus TCP server successfully");
 
@@ -226,6 +249,66 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
         await PushDataAsync(data);
     }
 
+    /// <summary>
+    /// Resolves connection configuration from DataCatalog using SourceConnectionId
+    /// </summary>
+    private async Task ResolveDataCatalogConfigurationAsync(CancellationToken cancellationToken)
+    {
+        Log(LogLevel.Information, "Resolving configuration from DataCatalog...");
+
+        // Validate SourceConnectionId
+        if (string.IsNullOrWhiteSpace(_options.SourceConnectionId))
+        {
+            throw new InvalidOperationException("SourceConnectionId is required");
+        }
+
+        if (!Guid.TryParse(_options.SourceConnectionId, out var sourceId))
+        {
+            throw new InvalidOperationException($"Invalid SourceConnectionId format: {_options.SourceConnectionId}");
+        }
+
+        // Get SourceConnection from DataCatalog
+        var sourceConnection = await _dataCatalogService.GetSourceConnectionByIdAsync(sourceId, cancellationToken);
+
+        if (sourceConnection == null)
+        {
+            throw new InvalidOperationException($"SourceConnection not found in DataCatalog: {sourceId}");
+        }
+
+        Log(LogLevel.Information, $"Found SourceConnection: {sourceConnection.Name} (ID: {sourceConnection.Id})");
+
+        // Extract Modbus TCP connection configuration from SourceConnection
+        _resolvedConnectionConfig = DataCatalogService.ExtractModbusTcpConfig(sourceConnection);
+
+        // Apply resolved connection config to options (for ModbusTcpConnectionService)
+        ApplyResolvedConnectionConfig(_resolvedConnectionConfig);
+
+        Log(LogLevel.Information, $"Resolved connection: {_resolvedConnectionConfig.Host}:{_resolvedConnectionConfig.Port}");
+        Log(LogLevel.Information, $"Resolved SlaveId: {_resolvedConnectionConfig.SlaveId}");
+        Log(LogLevel.Information, $"Resolved PollingInterval: {_resolvedConnectionConfig.PollingIntervalMs}ms");
+        Log(LogLevel.Information, $"Resolved ByteOrder: {_resolvedConnectionConfig.ByteOrder}");
+    }
+
+    /// <summary>
+    /// Applies resolved connection configuration to the options
+    /// </summary>
+    private void ApplyResolvedConnectionConfig(ModbusTcpConnectionConfig config)
+    {
+        _options.Host = config.Host;
+        _options.Port = config.Port;
+        _options.SlaveId = config.SlaveId;
+
+        // Use values from DataCatalog if they have non-default values
+        if (config.ConnectionTimeoutMs > 0)
+            _options.ConnectionTimeoutMs = config.ConnectionTimeoutMs;
+        if (config.ReadTimeoutMs > 0)
+            _options.ReadTimeoutMs = config.ReadTimeoutMs;
+        if (config.PollingIntervalMs > 0)
+            _options.PollingIntervalMs = config.PollingIntervalMs;
+        if (!string.IsNullOrEmpty(config.ByteOrder))
+            _options.ByteOrderStr = config.ByteOrder;
+    }
+
     private async Task PushDataAsync(ModbusDataPoint data)
     {
         var tcs = new TaskCompletionSource();
@@ -289,6 +372,7 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
         }
 
         _connectionService.Dispose();
+        _dataCatalogService.Dispose();
         _inOutSubject.InputSubject.OnCompleted();
         _inOutSubject.OutputSubject.OnCompleted();
 
@@ -309,28 +393,27 @@ public class ModbusTcpElement : FlowBoxRaw, IFlowBoxSource, IFlowBoxDestroy
         var registrationInfo = new RegistrationInfoBuilder(FlowElementType.Source)
             .SetId("modbus-tcp-client", "industream")
             .SetDisplayName("Modbus TCP Client")
-            .SetCurrentVersion("1.0.0")
+            .SetCurrentVersion("2.0.5")
             .SetIcon("settings_input_hdmi")
+            .SetUiConfigType("js-bundle")
             .SetOutputs([
                 new TypeDefinition("default", "Modbus Data", [SerializationMethods.Msgpack])
             ])
             .SetDefaultOptionValues(new ModbusTcpOptions
             {
-                Host = "localhost",
-                Port = 502,
-                SlaveId = 1,
+                SourceConnectionId = "",
                 PollingIntervalMs = 1000,
                 ConnectionTimeoutMs = 5000,
                 ReadTimeoutMs = 3000,
                 Retries = 3,
                 RetryDelayMs = 500,
                 ByteOrderStr = "BigEndian",
-                Registers = "# Format: name:type:address[:datatype]\n# temperature:holding:0:float32"
+                Registers = ""
             })
             .Build((meta, services) => new ModbusTcpElement(meta, services));
 
-        // Load implementation from external file
-        var implementation = UiConfigLoader.GetConfigImplementation();
+        // Load js-bundle implementation from external file
+        var implementation = UiConfigLoader.GetJsBundleImplementation();
         if (implementation != null)
         {
             registrationInfo.UiConfig.Implementation = implementation;
